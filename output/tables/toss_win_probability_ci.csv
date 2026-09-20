@@ -1,0 +1,2 @@
+"estimate","lower_95","upper_95","successes","sample_size","method"
+0.513447432762836,0.48506962643683,0.541760657307584,630,1227,"Exact binomial confidence interval"
