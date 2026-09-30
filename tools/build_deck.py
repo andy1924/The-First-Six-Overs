@@ -1,7 +1,7 @@
 """Build The-First-Six-Overs.pptx — editorial presentation for the IPL powerplay study.
 
 Run:  python tools/build_deck.py
-Out:  The-First-Six-Overs.pptx  (repo root, 16:9, 25 slides, slide transitions, speaker notes)
+Out:  The-First-Six-Overs.pptx  (repo root, 16:9, 26 slides, slide transitions, speaker notes)
 
 Design: cream paper stock, ink type, hairline rules, one crimson accent.
 Display  = Palatino Linotype   (Windows + macOS Palatino)
@@ -14,7 +14,7 @@ from pathlib import Path
 import struct
 
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
+from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
@@ -81,6 +81,17 @@ def hairline(slide, x, y, w, color=RULE, weight=0.75):
     return conn
 
 
+def boxed(slide, x, y, w, h, color=RULE, weight=0.75):
+    """Unfilled rule-width rectangle — the plate and the callout share one idiom."""
+    box = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y),
+                                 Inches(w), Inches(h))
+    box.fill.background()
+    box.line.color.rgb = RGBColor.from_string(color)
+    box.line.width = Pt(weight)
+    box.shadow.inherit = False
+    return box
+
+
 def textbox(slide, x, y, w, h, anchor=MSO_ANCHOR.TOP):
     tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
     tf = tb.text_frame
@@ -91,14 +102,13 @@ def textbox(slide, x, y, w, h, anchor=MSO_ANCHOR.TOP):
     return tf
 
 
-def para(tf, first=False, align=PP_ALIGN.LEFT, line_spacing=None,
-         space_before=0, space_after=0):
+def para(tf, first=False, align=PP_ALIGN.LEFT, line_spacing=None, space_before=0):
     p = tf.paragraphs[0] if first else tf.add_paragraph()
     p.alignment = align
     if line_spacing:
         p.line_spacing = line_spacing
-    p.space_before = Pt(space_before)
-    p.space_after = Pt(space_after)
+    if space_before:
+        p.space_before = Pt(space_before)
     return p
 
 
@@ -183,12 +193,6 @@ def headline(slide, text, y=0.95, size=27, w=None, color=INK):
     return tf
 
 
-def kicker(slide, text, y, color=ACCENT):
-    tf = textbox(slide, ML, y, SW - ML - MR, 0.28)
-    label(tf, text, color=color, first=True)
-    return tf
-
-
 def body_text(slide, x, y, w, text, size=11.5, color=INK_SOFT, line_spacing=1.42):
     tf = textbox(slide, x, y, w, 1.6)
     p = para(tf, first=True, line_spacing=line_spacing)
@@ -215,6 +219,33 @@ def stat_rows(slide, x, y, w, rows, size=10.5):
     return cy
 
 
+def page(prs, section, crumb, title=None, y=0.92, size=26, w=None, trans="push"):
+    """Open a content slide: paper, running head, optional headline, ink transition."""
+    s = new_slide(prs)
+    running_head(s, section, crumb)
+    if title:
+        headline(s, title, y, size, w)
+    if trans:
+        transition(s, trans, *(() if trans == "fade" else ('dir="u"',)))
+    return s
+
+
+def tiles(slide, x, y, w, items, cols=3, pitch=1.70, value=26, label_size=10.5,
+          sub_size=7.5, gap=0.30):
+    """Rule, big mono value, label, small caps note — the deck's stat tile."""
+    tw = w / cols
+    for i, (v, l, sm, col) in enumerate(items):
+        cx = x + (i % cols) * tw
+        cy = y + (i // cols) * pitch
+        rect(slide, cx, cy, tw - gap, 0.025, col)
+        tf = textbox(slide, cx, cy + 0.14, tw - gap, 0.55)
+        run(para(tf, first=True), v, value, MONO, INK, track=-0.6)
+        tf = textbox(slide, cx, cy + 0.70, tw - gap, 0.3)
+        run(para(tf, first=True), l, label_size, BODY, INK_SOFT)
+        tf = textbox(slide, cx, cy + 1.00, tw - gap, 0.3)
+        label(tf, sm, color=INK_FAINT, first=True, size=sub_size, track=1.2)
+
+
 def figure_plate(slide, png, x, y, w, fignum, caption):
     """White stock on paper: a bordered plate, the image, then a ruled caption."""
     pw, ph = png_size(FIGS / png)
@@ -222,11 +253,7 @@ def figure_plate(slide, png, x, y, w, fignum, caption):
     img_h = inner * ph / pw
     plate_h = img_h + 0.20 + 0.40
     rect(slide, x, y, w, plate_h, "FFFFFF")
-    box = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(plate_h))
-    box.fill.background()
-    box.line.color.rgb = RGBColor.from_string(RULE)
-    box.line.width = Pt(0.75)
-    box.shadow.inherit = False
+    boxed(slide, x, y, w, plate_h)
     slide.shapes.add_picture(str(FIGS / png), Inches(x + 0.10), Inches(y + 0.10), width=Inches(inner))
     cy = y + img_h + 0.18
     hairline(slide, x + 0.10, cy, inner, RULE_SOFT, 0.6)
@@ -234,14 +261,13 @@ def figure_plate(slide, png, x, y, w, fignum, caption):
     p = para(tf, first=True, line_spacing=1.12)
     run(p, fignum.upper() + "  ", 7.5, MONO, ACCENT, track=1.2)
     run(p, caption, 8.8, BODY, INK_SOFT)
-    return plate_h
 
 
-def lede(tf, kick, text, first=False, size=11.5):
+def lede(tf, kick, text, first=False, size=11.5, kick_color=ACCENT):
     """Small mono kicker on its own line, then the sentence — so wrapped text never
     collides with the label and every verdict block aligns the same way."""
     pk = para(tf, first=first)
-    run(pk, kick.upper(), 8.5, MONO, ACCENT, track=1.4)
+    run(pk, kick.upper(), 8.5, MONO, kick_color, track=1.4)
     pt = para(tf, line_spacing=1.36, space_before=4)
     run(pt, text, size, BODY, INK)
     return pt
@@ -254,7 +280,7 @@ def footer_line(slide, text, x=None, y=None, w=None, color=INK_FAINT, size=8.5):
     return tf
 
 
-def divider(prs, num, section, headline_text, sub, folio, note):
+def divider(prs, num, headline_text, sub, folio, note):
     s = new_slide(prs, DARK)
     outline_numeral(s, ML, 1.10, 3.2, 3.4, num)
     x = 3.62
@@ -320,9 +346,8 @@ def build():
              "powerplay clearly. Detail follows.")
 
     # ---- 02 required flow -----------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "Contents", "02 / %d" % total)
-    headline(s, "Eight beats, in the order the brief asks for.", 0.92, 26, w=9.6)
+    s = page(prs, "Contents", "02 / %d" % total,
+             "Eight beats, in the order the brief asks for.", 0.92, 26, w=9.6)
     beats = [
         ("01", "Project title", "The First Six Overs"),
         ("02", "Aim / problem statement", "Six research questions, no outcome leakage"),
@@ -348,14 +373,12 @@ def build():
         p = para(tf, first=True, line_spacing=1.2)
         run(p, sub, 10.5, BODY, INK_SOFT)
     footer_line(s, "Beats 1–8 follow in that order; each opens with its own section divider.")
-    transition(s, "push", 'dir="u"')
     notes(s, "Read the eight beats once, quickly, then move on. This is the map the rest of the deck "
              "walks: title, aim, theory, data and its source, cleaning, implementation, analysis, "
              "conclusion.")
 
     # ---- 03 the claim ---------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "Before we start", "03 / %d" % total)
+    s = page(prs, "Before we start", "03 / %d" % total)
     tf = textbox(s, ML, 1.62, 10.6, 1.9)
     p = para(tf, first=True, line_spacing=1.05)
     run(p, "“Win the powerplay, ", 40, DISPLAY, INK, track=-0.6)
@@ -369,19 +392,16 @@ def build():
     run(p, "Momentum is an argument from memory. Conditional probability is an argument from data. "
            "Six research questions later the folklore survives — but not the half of it that blames "
            "the toss.", 14.5)
-    transition(s, "push", 'dir="u"')
     notes(s, "Frame the stakes: this is a claim everyone repeats. We treat it as a hypothesis.")
 
     # ---- 03 divider · aim ----------------------------------------------
-    divider(prs, "01", "aim", "Aim",
+    divider(prs, "01", "Aim",
             "Turn a claim made in the commentary box into a testable question about "
             "conditional probability.", "01 · AIM",
             "Six sections. Aim, theory, data, implementation, analysis, conclusion.")
 
     # ---- 04 problem + RQs ----------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "01 · Aim", "Problem statement · RQ1–RQ6")
-    headline(s, "Estimate how the toss and the powerplay are associated with winning.", 0.92, 24)
+    s = page(prs, "01 · Aim", "Problem statement · RQ1–RQ6", "Estimate how the toss and the powerplay are associated with winning.", 0.92, 24)
     body_text(s, ML, 1.72, 11.6,
               "The match result is a binary outcome. Every explanatory variable is known by the end of "
               "the sixth over, so the model never sees the final score of the match it is predicting — "
@@ -409,14 +429,11 @@ def build():
         p2 = para(tf, line_spacing=1.1, space_before=3)
         run(p2, concept.upper(), 7.5, MONO, INK_FAINT, track=1.2)
     footer_line(s, "Explanatory variables: toss outcome · toss decision · powerplay runs · powerplay wickets")
-    transition(s, "push", 'dir="u"')
     notes(s, "Walk the six questions in two rows. Emphasise the leakage rule — it is the design "
              "decision that makes the model honest.")
 
     # ---- 05 hypotheses --------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "01 · Aim", "H0 / H1 · α = 0.05")
-    headline(s, "Three null hypotheses, stated before the data was touched.", 0.92, 24)
+    s = page(prs, "01 · Aim", "H0 / H1 · α = 0.05", "Three null hypotheses, stated before the data was touched.", 0.92, 24)
     hyps = [
         ("Toss impact", "Toss result and match result are independent.",
          "Toss result and match result are associated."),
@@ -443,20 +460,17 @@ def build():
     lede(tf, "Why it matters",
          "A hypothesis written after seeing the result is not a test — it is a caption. "
          "These three were fixed first.", first=True, size=13)
-    transition(s, "push", 'dir="u"')
     notes(s, "Small slide, big point: pre-registered hypotheses. α = 0.05 throughout.")
 
     # ---- 06 divider · theory -------------------------------------------
-    divider(prs, "02", "theory", "Domain theory",
+    divider(prs, "02", "Domain theory",
             "Why the first six overs are the most volatile — and the best-documented — "
             "part of a T20 innings.", "02 · THEORY",
             "Necessary context before any number: what the powerplay is, and why it is a "
             "trade-off rather than a free run-scoring window.")
 
     # ---- 07 domain ------------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "02 · Domain theory", "Overs 1–6")
-    headline(s, "Restrictions cut both ways.", 0.92, 26, w=5.4)
+    s = page(prs, "02 · Domain theory", "Overs 1–6", "Restrictions cut both ways.", 0.92, 26, w=5.4)
     body_text(s, ML, 1.66, 5.3,
               "In the powerplay only two fielders may stand outside the 30-yard circle. Boundaries get "
               "cheaper — and so do wickets, because batters attack from ball one.", 11.5)
@@ -465,10 +479,9 @@ def build():
               "the back foot for the remaining fourteen overs.", 11.5)
     hairline(s, ML, 3.72, 5.3, RULE, 0.75)
     tf = textbox(s, ML, 3.92, 5.3, 1.5)
-    p = lede(tf, "Design consequence",
-             "Rules were relaxed after 2015 and pitches differ by venue, so this is an observational "
-             "study: it measures association, never causation.", first=True, size=11)
-    p.runs[0].font.color.rgb = RGBColor.from_string(INK_SOFT)
+    lede(tf, "Design consequence",
+         "Rules were relaxed after 2015 and pitches differ by venue, so this is an observational "
+         "study: it measures association, never causation.", first=True, size=11, kick_color=INK_SOFT)
     stat_rows(s, 6.70, 1.66, 5.9, [
         ("Fielders allowed outside the circle", "2", None),
         ("Balls per powerplay", "36", None),
@@ -479,20 +492,17 @@ def build():
     ])
     footer_line(s, "Everything the model knows about a team, it knows by the end of its sixth over.",
                 x=6.70, y=4.90, w=5.9)
-    transition(s, "push", 'dir="u"')
     notes(s, "Two minutes. The importance is the trade-off: attacking raises the ceiling and the "
              "variance at the same time. That is why wickets later turn out to matter more than runs.")
 
     # ---- 08 divider · data ---------------------------------------------
-    divider(prs, "03", "data", "Data",
+    divider(prs, "03", "Data",
             "Eighteen seasons of ball-by-ball IPL records, reduced to a single clean table.",
             "03 · DATA",
             "Two slides: the description and its reference, then the cleaning rules.")
 
     # ---- 09 data --------------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "03 · Data description with reference", "Source & scope")
-    headline(s, "1,227 matches, 2,454 innings.", 0.92, 26, w=5.9)
+    s = page(prs, "03 · Data description with reference", "Source & scope", "1,227 matches, 2,454 innings.", 0.92, 26, w=5.9)
     body_text(s, ML, 1.70, 5.10,
               "Ball-by-ball JSON from Cricsheet, one file per match, pulled and parsed in R with the "
               "cricketdata package. Each match contributes two rows — one per team.", 11.5)
@@ -500,42 +510,25 @@ def build():
     p = para(tf, first=True, line_spacing=1.36)
     run(p, "CITATION  ", 8.5, MONO, ACCENT, track=1.4)
     run(p, "Cricsheet. Available match data downloads. cricsheet.org/downloads/", 10.5, BODY, INK_FAINT)
-    tiles = [
+    tiles(s, 6.30, 1.70, SW - MR - 6.30, [
         ("1,227", "completed matches", "analysed", INK),
         ("2,454", "team-match rows", "two per match", INK),
         ("18", "seasons", "2008–2025", INK),
         ("15", "franchises", "name-standardised", INK),
         ("60", "venues", "not modelled", INK),
         ("16", "matches excluded", "no-result · short", ACCENT),
-    ]
-    tw = (SW - MR - 6.30)
-    for i, (v, l, sm, col) in enumerate(tiles):
-        col_i, row = i % 3, i // 3
-        x = 6.30 + col_i * (tw / 3)
-        y = 1.70 + row * 1.70
-        rect(s, x, y, (tw / 3) - 0.30, 0.025, col)
-        tf = textbox(s, x, y + 0.16, (tw / 3) - 0.30, 0.5)
-        p = para(tf, first=True)
-        run(p, v, 26, MONO, INK, track=-0.6)
-        tf = textbox(s, x, y + 0.72, (tw / 3) - 0.30, 0.3)
-        p = para(tf, first=True)
-        run(p, l, 10.5, BODY, INK_SOFT)
-        tf = textbox(s, x, y + 1.02, (tw / 3) - 0.30, 0.3)
-        label(tf, sm, color=INK_FAINT, first=True, size=7.5, track=1.2)
+    ])
     hairline(s, ML, 5.06, SW - ML - MR, INK, 1.1)
     tf = textbox(s, ML, 5.26, SW - ML - MR, 0.9)
     lede(tf, "Coverage",
          "Every completed IPL match with a full six-over powerplay for both sides — the whole "
          "population, not a sample.", first=True, size=13)
-    transition(s, "push", 'dir="u"')
     notes(s, "Cricsheet is the reference dataset for cricket analytics. Stress that this is the full "
              "population of completed IPL matches, so the confidence intervals describe the league, "
              "not an experiment.")
 
     # ---- 10 cleaning ----------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "03 · Data cleaning", "Rules & reproducibility")
-    headline(s, "Raw files are never modified.", 0.92, 26, w=5.4)
+    s = page(prs, "03 · Data cleaning", "Rules & reproducibility", "Raw files are never modified.", 0.92, 26, w=5.4)
     steps = [
         ("Filter", "Drop 9 abandoned / no-result matches and 7 without a complete six-over powerplay."),
         ("Filter", "Keep only deliveries in overs 1–6 of each innings."),
@@ -566,20 +559,17 @@ def build():
     ])
     footer_line(s, "Reads dataset/*.json → writes the cleaned table, result tables and all seven figures into output/.",
                 x=7.05, y=5.34, w=5.55)
-    transition(s, "push", 'dir="u"')
     notes(s, "One slide for reproducibility. The single script reads the raw JSON and regenerates "
              "every number in this deck — no manual steps, and the raw download is never written to.")
 
     # ---- 11 divider · implementation -----------------------------------
-    divider(prs, "04", "implementation", "Implementation",
+    divider(prs, "04", "Implementation",
             "One script, seven visuals, no manual steps — the analysis is reproducible from the "
             "raw download.", "04 · IMPLEMENTATION",
             "Tooling slide. Short: packages, outputs, and the guarantee that everything is traceable.")
 
     # ---- 12 implementation ---------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "04 · Data implementation", "R · 6 packages")
-    headline(s, "Statistics in the open.", 0.92, 26, w=5.4)
+    s = page(prs, "04 · Data implementation", "R · 6 packages", "Statistics in the open.", 0.92, 26, w=5.4)
     body_text(s, ML, 1.62, 5.35,
               "Every test is a named function and its output is tidied with broom, so each p-value, "
               "confidence interval and odds ratio in this deck traces back to one line of code.", 11.5)
@@ -619,21 +609,18 @@ def build():
         hairline(s, 6.95, y - 0.10, 5.66, RULE_SOFT, 0.6)
     footer_line(s, "The raw dataset/ folder is an input only — nothing in the pipeline overwrites it.",
                 x=6.95, y=4.92, w=5.66)
-    transition(s, "push", 'dir="u"')
     notes(s, "Technical slide — keep it to a minute. The point is auditability: no spreadsheet steps, "
              "no hand-tuned numbers.")
 
     # ---- 13 divider · analysis -----------------------------------------
-    divider(prs, "05", "analysis", "Analysis",
+    divider(prs, "05", "Analysis",
             "Six questions, six tests. The toss disappoints; the wickets decide.",
             "05 · ANALYSIS",
             "The core of the talk — eight slides. Pace: roughly one minute each, more on the heatmap "
             "and the regression.")
 
     # ---- 14 descriptives ------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "05 · Data analysis", "Powerplay runs · n = 2,454")
-    headline(s, "A typical powerplay is 48 for 1.", 0.92, 26, w=5.6)
+    s = page(prs, "05 · Data analysis", "Powerplay runs · n = 2,454", "A typical powerplay is 48 for 1.", 0.92, 26, w=5.6)
     body_text(s, ML, 1.66, 5.4,
               "Runs are right-skewed: a handful of explosive starts, up to 125, drag the mean above the "
               "median. Wickets are far tighter — most sides lose one or two.", 11.5)
@@ -676,14 +663,12 @@ def build():
     footer_line(s, "Both tails are heavier than a normal distribution: very good and very bad starts "
                    "happen more often than the bell curve predicts.",
                 x=x0, y=y + 0.12, w=w0)
-    transition(s, "push", 'dir="u"')
     notes(s, "Descriptive slide. Two things to say: the mean sits above the median because a few "
              "innings explode, and the excess kurtosis tells you the tails matter. This is why the "
              "analysis uses bands and a logistic model rather than the mean alone.")
 
     # ---- 15 toss (RQ1, RQ2) ---------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "05 · Data analysis · RQ1 RQ2", "Conditional probability · χ²")
+    s = page(prs, "05 · Data analysis · RQ1 RQ2", "Conditional probability · χ²")
     tf = textbox(s, ML, 1.32, 5.5, 1.3)
     p = para(tf, first=True, line_spacing=0.95)
     run(p, "51.3", 62, DISPLAY, INK, track=-1.4)
@@ -705,15 +690,12 @@ def build():
          "it is not a decision-maker.", first=True)
     figure_plate(s, "01_toss_win_rate_ci.png", 6.62, 1.42, 5.99, "Fig. 01",
                  "Win rate after winning or losing the toss, with exact 95% binomial confidence intervals.")
-    transition(s, "push", 'dir="u"')
     notes(s, "The headline number everyone expects to be bigger. 51.3% against 48.7% — a 2.6 point "
              "gap. The confidence interval runs from 48.5 to 54.1, so 50% is well inside it, and the "
              "chi-square p-value of 0.183 means we cannot reject independence. The toss is a coin.")
 
     # ---- 16 toss decision -----------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "05 · Data analysis · RQ2", "Post-toss decision")
-    headline(s, "Field first, and the toss starts to pay.", 0.92, 25, w=6.40)
+    s = page(prs, "05 · Data analysis · RQ2", "Post-toss decision", "Field first, and the toss starts to pay.", 0.92, 25, w=6.40)
     body_text(s, ML, 1.78, 5.50,
               "Captains chase: 816 of 1,227 matches were field-first. Among toss winners the choice "
               "divides them — 54.2% of those who elected to field went on to win, against 45.7% of "
@@ -732,31 +714,17 @@ def build():
          "OR ≈ 1, so read this as a raw comparison, not an established edge.", first=True)
     figure_plate(s, "02_toss_decision_result.png", 6.62, 1.42, 5.99, "Fig. 02",
                  "Outcome split within each decision among toss winners — the field-first group converts better.")
-    transition(s, "push", 'dir="u"')
     notes(s, "Secondary finding, flagged as such: among toss winners, electing to field is associated "
              "with an 8.5-point higher win rate. Two caveats — it is recomputed from the cleaned CSV "
              "rather than part of the pre-registered toss test, and teams that choose to bat may differ "
              "systematically. Association, not proof.")
 
     # ---- 17 runs (RQ3) ---------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "05 · Data analysis · RQ3", "t-test · p < 0.001")
-    headline(s, "Winners start 5.8 runs faster.", 0.92, 25, w=6.40)
-    tiles = [("51.4", "winners", "median 50", TEAL),
-             ("45.6", "losers", "median 45", ACCENT),
-             ("59.7%", "win rate at 50+ runs", "vs 42.3% below 50", INK)]
-    tw = 5.35 / 3
-    for i, (v, l, sm, col) in enumerate(tiles):
-        x = ML + i * tw
-        rect(s, x, 1.72, tw - 0.22, 0.025, col)
-        tf = textbox(s, x, 1.86, tw - 0.22, 0.55)
-        p = para(tf, first=True)
-        run(p, v, 25, MONO, INK, track=-0.6)
-        tf = textbox(s, x, 2.42, tw - 0.22, 0.3)
-        p = para(tf, first=True)
-        run(p, l, 10, BODY, INK_SOFT)
-        tf = textbox(s, x, 2.68, tw - 0.22, 0.3)
-        label(tf, sm, color=INK_FAINT, first=True, size=7, track=1.0)
+    s = page(prs, "05 · Data analysis · RQ3", "t-test · p < 0.001", "Winners start 5.8 runs faster.", 0.92, 25, w=6.40)
+    tiles(s, ML, 1.72, 5.35, [("51.4", "winners", "median 50", TEAL),
+                              ("45.6", "losers", "median 45", ACCENT),
+                              ("59.7%", "win rate at 50+ runs", "vs 42.3% below 50", INK)],
+          pitch=1.24, value=25, label_size=10, sub_size=7)
     body_text(s, ML, 3.16, 5.35,
               "The difference is small in absolute terms — under one run an over — but with 2,454 "
               "innings the two-sample t-test rejects H0 decisively (p < 0.001).", 11.5)
@@ -767,14 +735,12 @@ def build():
          "seventeen points, not by the match.", first=True)
     figure_plate(s, "03_powerplay_runs_by_result.png", 6.62, 1.24, 5.99, "Fig. 03",
                  "Powerplay runs for winners and losers — the distributions overlap heavily.")
-    transition(s, "push", 'dir="u"')
     notes(s, "Significant, but look at the violin plots — the overlap is enormous. Statistically "
              "significant is not the same as useful for prediction. That distinction sets up the "
              "heatmap on the next slide.")
 
     # ---- 18 heatmap (RQ5) -----------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "05 · Data analysis · RQ5", "16 cells · conditional probability")
+    s = page(prs, "05 · Data analysis · RQ5", "16 cells · conditional probability")
     tf = textbox(s, ML, 1.28, 5.4, 1.9)
     p1 = para(tf, first=True, line_spacing=1.08)
     run(p1, "Runs raise the ceiling.", 28, DISPLAY, INK, track=-0.5)
@@ -790,16 +756,13 @@ def build():
                 x=ML, y=4.62, w=5.4)
     figure_plate(s, "04_score_wicket_heatmap.png", 6.52, 1.24, 6.09, "Fig. 04",
                  "Win probability by powerplay score band and wickets lost, with cell sample sizes.")
-    transition(s, "push", 'dir="u"')
     notes(s, "The single most important chart in the deck. Hold on it. The vertical axis — runs — "
              "matters far less than the horizontal axis — wickets. A team that is 60 for none wins "
              "about 77% of the time; a team that is 60 for three, roughly 35%. Protection beats "
              "acceleration.")
 
     # ---- 19 poisson (RQ4) -----------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "05 · Data analysis · RQ4", "Poisson goodness of fit")
-    headline(s, "Wickets are not random events.", 0.92, 25, w=5.4)
+    s = page(prs, "05 · Data analysis · RQ4", "Poisson goodness of fit", "Wickets are not random events.", 0.92, 25, w=5.4)
     body_text(s, ML, 1.78, 5.35,
               "If powerplay wickets were memoryless, Poisson with λ = 1.44 would fit. It does not: the "
               "observed spread, variance 1.26, is narrower than Poisson demands, and six-wicket "
@@ -816,15 +779,13 @@ def build():
          "than losing them at a constant rate.", first=True)
     figure_plate(s, "05_poisson_wickets.png", 6.62, 1.42, 5.99, "Fig. 05",
                  "Observed versus Poisson-expected wicket counts — thinner tails than the model predicts.")
-    transition(s, "push", 'dir="u"')
     notes(s, "One caution for the room: the goodness-of-fit p-value near 0.002 was recomputed from "
              "the cleaned CSV, so quote it as approximate. The qualitative result is what matters — "
              "the tails are thinner than Poisson, which means wicket loss is a managed, deliberate "
              "process, not a memoryless one.")
 
     # ---- 20 regression (RQ6) --------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "05 · Data analysis · RQ6", "Logistic regression · odds ratios")
+    s = page(prs, "05 · Data analysis · RQ6", "Logistic regression · odds ratios")
     tf = textbox(s, ML, 1.28, 5.6, 1.3)
     p = para(tf, first=True, line_spacing=0.95)
     run(p, "0.60", 58, DISPLAY, ACCENT, track=-1.4)
@@ -847,41 +808,34 @@ def build():
          "The toss adds nothing once wickets are in the model.", first=True)
     figure_plate(s, "07_logistic_odds_ratios.png", 6.62, 1.42, 5.99, "Fig. 07",
                  "Odds ratios with 95% confidence intervals for early-match predictors.")
-    transition(s, "push", 'dir="u"')
     notes(s, "The model that answers RQ6. Wickets carry the signal, runs carry a smaller one, and the "
              "toss confidence interval sits across 1.0 — no effect. Note the honest caveat: an odds "
              "ratio of 0.60 is an association, not a lever.")
 
     # ---- 21 team trends --------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "05 · Data analysis", "18 seasons · 15 franchises")
-    headline(s, "A fast start is not a habit that wins.", 0.92, 25, w=6.40)
+    s = page(prs, "05 · Data analysis", "18 seasons · 15 franchises", "A fast start is not a habit that wins.", 0.92, 25, w=6.40)
     body_text(s, ML, 1.82, 5.35,
               "Teams with the same powerplay run rate convert it into wins at very different rates, and "
               "the gap moves season to season. Squad quality, venue and conditions sit behind both the "
               "start and the result — which is exactly why this study claims association, not cause.", 11.5)
     hairline(s, ML, 3.36, 5.35, RULE, 0.75)
     tf = textbox(s, ML, 3.56, 5.35, 1.6)
-    p = lede(tf, "Context worth naming",
-             "Sixty venues, rule changes after 2015, and franchise reshuffles across eighteen seasons "
-             "all feed into the spread beside you.", first=True, size=11)
-    p.runs[0].font.color.rgb = RGBColor.from_string(INK_SOFT)
+    lede(tf, "Context worth naming",
+         "Sixty venues, rule changes after 2015, and franchise reshuffles across eighteen seasons "
+         "all feed into the spread beside you.", first=True, size=11, kick_color=INK_SOFT)
     figure_plate(s, "06_team_season_trends.png", 6.62, 1.06, 5.99, "Fig. 06",
                  "Powerplay run rate and win rate by team and season.")
-    transition(s, "push", 'dir="u"')
     notes(s, "This is the confounder slide in disguise. If the powerplay caused wins, the teams with "
              "high run rates would convert consistently. They do not.")
 
     # ---- 22 divider · conclusion ---------------------------------------
-    divider(prs, "06", "conclusion", "Conclusion",
+    divider(prs, "06", "Conclusion",
             "What the tests actually license us to say — and what they do not.",
             "06 · CONCLUSION",
             "Close on the verdict, then spend real time on the limitations. Exam answers live here.")
 
     # ---- 23 conclusion ---------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "06 · Conclusion", "Six answers")
-    headline(s, "Answers, in the order the questions were asked.", 0.90, 24)
+    s = page(prs, "06 · Conclusion", "Six answers", "Answers, in the order the questions were asked.", 0.90, 24)
     answers = [
         ("RQ1 · Win after the toss", "Marginal", "51.3% · CI 48.5–54.1", None),
         ("RQ2 · Toss independent of result", "No evidence of association", "p = 0.183", None),
@@ -915,14 +869,11 @@ def build():
          "The toss is a small advantage at most. A strong, low-wicket powerplay is the clearer sign "
          "of an IPL win — and protecting wickets matters more than scoring quickly.",
          first=True, size=13)
-    transition(s, "push", 'dir="u"')
     notes(s, "Read the six rows quickly, land on RQ6, then say the verdict sentence verbatim. "
              "This is the sentence the grader is looking for.")
 
     # ---- 24 limitations --------------------------------------------------
-    s = new_slide(prs)
-    running_head(s, "06 · Conclusion", "Scope & limits")
-    headline(s, "What this cannot tell you.", 0.92, 25, w=5.6)
+    s = page(prs, "06 · Conclusion", "Scope & limits", "What this cannot tell you.", 0.92, 25, w=5.6)
     limits = [
         ("Causality", "Observational data. Stronger squads produce both good powerplays and wins."),
         ("Confounders", "Opposition, venue, pitch, weather, season and rule changes are unmodelled."),
@@ -940,11 +891,7 @@ def build():
         run(p, txt, 11, BODY, INK_SOFT)
         y += 0.80
     rect(s, 7.15, 1.94, 5.46, 1.86, PAPER)
-    box = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(7.15), Inches(1.94), Inches(5.46), Inches(1.86))
-    box.fill.background()
-    box.line.color.rgb = RGBColor.from_string(RULE)
-    box.line.width = Pt(0.75)
-    box.shadow.inherit = False
+    boxed(s, 7.15, 1.94, 5.46, 1.86)
     tf = textbox(s, 7.40, 2.16, 4.96, 1.5)
     label(tf, "Honest headline", color=ACCENT, first=True, size=8.5)
     p = para(tf, line_spacing=1.40, space_before=8)
@@ -956,7 +903,6 @@ def build():
     footer_line(s, "Next steps: venue-normalised baselines, a within-match design, and mixed-effects "
                    "models with season and team as random effects.",
                 x=7.15, y=4.04, w=5.46)
-    transition(s, "push", 'dir="u"')
     notes(s, "Do not skip this slide — for a statistics module it is often where the marks are. "
              "Association is not causation, and the reverse path is subtle: a team that is cruising "
              "protects wickets, so part of the effect runs the other way.")
